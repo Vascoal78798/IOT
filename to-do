@@ -65,40 +65,40 @@ Output desta fase:
 Objetivo: contar carros, manter ocupação da ala, ler ar, controlar ventoinha e sinalizar alertas.
 
 ### 2.1 Contagem entrada/saída (duas vias separadas)
-- [ ] Montar um sensor ultrassónico só na ENTRADA da ala.
-- [ ] Montar um sensor ultrassónico só na SAÍDA da ala.
-- [ ] Ler os dois sensores.
-- [ ] Se o sensor da ENTRADA detetar carro e não foi contado ainda → `ocupacao_ala++`.
-- [ ] Se o sensor da SAÍDA detetar carro e não foi contado ainda → `ocupacao_ala--` (nunca ir abaixo de 0).
-- [ ] Implementar debounce (ex.: ignorar novo carro no mesmo sensor durante ~300 ms para não contar duas vezes).
-- [ ] Sempre que `ocupacao_ala` muda, enviar pelo serial/MQTT algo tipo:
+- [x] Montar um sensor ultrassónico só na ENTRADA da ala.
+- [x] Montar um sensor ultrassónico só na SAÍDA da ala.
+- [x] Ler os dois sensores.
+- [x] Se o sensor da ENTRADA detetar carro e não foi contado ainda → `ocupacao_ala++`.
+- [x] Se o sensor da SAÍDA detetar carro e não foi contado ainda → `ocupacao_ala--` (nunca ir abaixo de 0).
+- [x] Implementar debounce (ex.: ignorar novo carro no mesmo sensor durante ~300 ms para não contar duas vezes).
+- [x] Sempre que `ocupacao_ala` muda, enviar pelo serial/MQTT algo tipo:
   - `{"evento":"entrada","total":12}`
   - `{"evento":"saida","total":11}`
 
 ### 2.2 Manter ocupação da ala
-- [ ] Guardar variável `ocupacao_ala` no Arduino da ala.
-- [ ] Garantir que não fica negativa.
-- [ ] Guardar timestamp da última atualização.
+- [x] Guardar variável `ocupacao_ala` no Arduino da ala.
+- [x] Garantir que não fica negativa.
+- [x] Guardar timestamp da última atualização.
 
 
 ### 2.3 Qualidade do ar
-- [ ] Ligar o sensor MQ-7 (CO) ao analógico do Arduino da ala.
-- [ ] Ler o valor e guardar como `qualidade_ar` (valor relativo: quanto maior, pior).
-- [ ] Enviar periodicamente este valor para o Raspberry Pi.
+- [x] Ligar o sensor MQ-7 (CO) ao analógico do Arduino da ala.
+- [x] Ler o valor e guardar como `qualidade_ar` (valor relativo: quanto maior, pior).
+- [x] Enviar periodicamente este valor para o Raspberry Pi.
 
 ### 2.4 Ventoinha
-- [ ] Ligar a ventoinha (fan) a um pino PWM (ou relé on/off).
-- [ ] Receber do Raspberry Pi um valor de velocidade (0–100%).
-- [ ] Aplicar esse valor via `analogWrite()` (PWM) ou ligar/desligar se for relé.
-- [ ] Enviar de volta para o Pi qual é a % atual.
+- [x] Ligar a ventoinha (fan) a um pino PWM (ou relé on/off).
+- [x] Receber do Raspberry Pi um valor de velocidade (0–100%).
+- [x] Aplicar esse valor via `analogWrite()` (PWM) ou ligar/desligar se for relé.
+- [x] Enviar de volta para o Pi qual é a % atual.
 
 ### 2.5 Validação cruzada da ocupação
-- [ ] Receber do Raspberry Pi a soma dos lugares ocupados (vinda dos nós de lugar).
-- [ ] Comparar essa soma com `ocupacao_ala`.
-- [ ] Se a diferença for grande durante algum tempo → `alerta_sensor = true`.
+- [x] Receber do Raspberry Pi a soma dos lugares ocupados (vinda dos nós de lugar).
+- [x] Comparar essa soma com `ocupacao_ala`.
+- [x] Se a diferença for grande durante algum tempo → `alerta_sensor = true`.
 
 ### 2.6 Envio de dados para o Pi
-- [ ] Enviar em JSON:
+- [x] Enviar em JSON:
   - `ocupacao_ala`
   - `qualidade_ar`
   - `ventoinha_percent`
