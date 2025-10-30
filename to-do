@@ -1,0 +1,199 @@
+
+---
+
+### Ficheiro 2: `TODO.md`
+
+```markdown
+# Plano de Trabalho / TODO
+
+Este ficheiro é o plano de implementação passo a passo.
+
+---
+
+## 0. Preparação inicial
+
+- [x] Criar repositório Git com pastas:
+  - `/node_lugar/`
+  - `/node_ala/`
+  - `/gateway_pi/`
+  - `/dashboard/`
+  - `/relatorio/`
+
+- [x] Criar `.gitignore` com regras para Arduino, Python e Node-RED / Flask.
+
+- [x] Confirmar hardware final:
+  - Arduino UNO R4 WiFi (um para nó de lugar, um para nó de ala).
+  - Raspberry Pi.
+  - Sensores ultrassónicos.
+  - Sensor MQ-7 (CO) / qualidade do ar.
+  - Ventoinha (fan) controlável via PWM ou relé.
+  - LEDs.
+
+---
+
+## 1. Nó do lugar
+
+**Corre em:** Arduino UNO R4 WiFi  
+**Linguagem:** C/C++
+
+Objetivo: decidir se o lugar está livre/ocupado e reportar isso.
+
+Tarefas:
+- [x] Ligar sensor ultrassónico ao Arduino.
+- [x] Ligar LED verde/vermelho.
+- [x] Medir distância “a vazio” e guardar como referência.
+- [x] Fazer média de várias leituras para reduzir ruído.
+- [x] Aplicar histerese:
+  - se distância < (ref - margem_pequena) → ocupado.
+  - se distância > (ref - margem_grande) → livre.
+- [x] Atualizar LED (verde = livre, vermelho = ocupado).
+- [x] Enviar mensagem (serial ou MQTT) com:
+  - ID do lugar
+  - estado_lugar (“livre” / “ocupado”)
+  - timestamp simples (millis ou contador)
+
+Output desta fase:  
+1 lugar já sabe dizer “livre/ocupado” e manda essa info para o Pi.
+
+---
+
+## 2. Nó da ala
+
+**Corre em:** Arduino UNO R4 WiFi  
+**Linguagem:** C/C++
+
+Objetivo: contar carros, manter ocupação da ala, ler ar, controlar ventoinha e sinalizar alertas.
+
+### 2.1 Contagem entrada/saída (duas vias separadas)
+- [ ] Montar um sensor ultrassónico só na ENTRADA da ala.
+- [ ] Montar um sensor ultrassónico só na SAÍDA da ala.
+- [ ] Ler os dois sensores.
+- [ ] Se o sensor da ENTRADA detetar carro e não foi contado ainda → `ocupacao_ala++`.
+- [ ] Se o sensor da SAÍDA detetar carro e não foi contado ainda → `ocupacao_ala--` (nunca ir abaixo de 0).
+- [ ] Implementar debounce (ex.: ignorar novo carro no mesmo sensor durante ~300 ms para não contar duas vezes).
+- [ ] Sempre que `ocupacao_ala` muda, enviar pelo serial/MQTT algo tipo:
+  - `{"evento":"entrada","total":12}`
+  - `{"evento":"saida","total":11}`
+
+### 2.2 Manter ocupação da ala
+- [ ] Guardar variável `ocupacao_ala` no Arduino da ala.
+- [ ] Garantir que não fica negativa.
+- [ ] Guardar timestamp da última atualização.
+
+
+### 2.3 Qualidade do ar
+- [ ] Ligar o sensor MQ-7 (CO) ao analógico do Arduino da ala.
+- [ ] Ler o valor e guardar como `qualidade_ar` (valor relativo: quanto maior, pior).
+- [ ] Enviar periodicamente este valor para o Raspberry Pi.
+
+### 2.4 Ventoinha
+- [ ] Ligar a ventoinha (fan) a um pino PWM (ou relé on/off).
+- [ ] Receber do Raspberry Pi um valor de velocidade (0–100%).
+- [ ] Aplicar esse valor via `analogWrite()` (PWM) ou ligar/desligar se for relé.
+- [ ] Enviar de volta para o Pi qual é a % atual.
+
+### 2.5 Validação cruzada da ocupação
+- [ ] Receber do Raspberry Pi a soma dos lugares ocupados (vinda dos nós de lugar).
+- [ ] Comparar essa soma com `ocupacao_ala`.
+- [ ] Se a diferença for grande durante algum tempo → `alerta_sensor = true`.
+
+### 2.6 Envio de dados para o Pi
+- [ ] Enviar em JSON:
+  - `ocupacao_ala`
+  - `qualidade_ar`
+  - `ventoinha_percent`
+  - `alerta_sensor`
+  - timestamp
+
+---
+
+## 3. Gateway / Raspberry Pi
+
+**Corre em:** Raspberry Pi  
+**Linguagem:** Python
+
+Tarefas:
+- [ ] Instalar e configurar Mosquitto MQTT.
+- [ ] Fazer script Python para:
+  - [ ] Receber dados dos Arduinos (MQTT ou série).
+  - [ ] Guardar dados em SQLite/InfluxDB (timestamp, ala, ocupacao_ala, qualidade_ar, ventoinha_percent...).
+  - [ ] Calcular previsão da ocupação:
+    - hora do dia / dia da semana
+    - ocupação média dos últimos 30–60 min
+    - fluxo de ENTRADAS nos últimos 5–15 min
+  - [ ] A partir da previsão:
+    - se vai encher → subir velocidade base da ventoinha
+    - se vai acalmar → baixar para o mínimo
+  - [ ] Regras de segurança:
+    - se qualidade_ar muito má → ventoinha = 100%
+    - se qualidade_ar boa → ventoinha = mínimo
+  - [ ] Enviar a % desejada da ventoinha para o Arduino da ala.
+  - [ ] Comparar `ocupacao_ala` (contador ENTRADA/SAÍDA) com soma dos lugares ocupados:
+    - se muito diferente → marcar alerta_sensor = true
+
+---
+
+## 4. Dashboard
+
+**Corre em:** Raspberry Pi  
+**Linguagem:** Node-RED (JS simples) OU Flask (Python) + HTML/JS
+
+Tarefas:
+- [ ] Mostrar por ala:
+  - Lugares livres / ocupados
+  - `ocupacao_ala`
+  - `alerta_sensor` (sim/não)
+  - `qualidade_ar`
+  - `ventoinha_percent`
+  - “vai encher” / “vai aliviar”
+- [ ] Mostrar aviso para o admin:
+  - “Ala A quase cheia → abrir Ala B?”
+- [ ] Mostrar página simples para utilizador normal:
+  - “Ala A: X lugares livres agora”
+
+---
+
+## 5. Testes
+
+- [ ] Nó do lugar:
+  - Meter/tirar objeto → LED muda e envia estado.
+- [ ] Nó da ala:
+  - Passar algo pelo sensor da ENTRADA → contador++.
+  - Passar algo pelo sensor da SAÍDA → contador--.
+  - Ver se não conta duas vezes devido ao debounce.
+- [ ] Comparação:
+  - Forçar diferença entre `ocupacao_ala` e soma dos lugares ocupados → ver `alerta_sensor`.
+- [ ] Ventilação:
+  - Simular muitos carros a entrar → Pi prevê encher → manda subir ventoinha.
+  - Simular calma → Pi manda baixar.
+  - Forçar ar “mau” → ventoinha = 100%.
+- [ ] Dashboard:
+  - Ver ocupação, previsão, qualidade do ar, alerta e ventoinha em tempo real.
+
+---
+
+## 6. Relatório / apresentação
+
+- [ ] Explicar o problema que estamos a resolver (gestão de parque por alas + qualidade do ar).
+- [ ] Mostrar a arquitetura (nó do lugar → nó da ala → Pi → dashboard).
+- [ ] Dizer que corre em Arduino (C/C++) e em Raspberry Pi (Python).
+- [ ] Mostrar capturas do dashboard.
+- [ ] Explicar previsão + ventilação feed-forward numa frase simples.
+- [ ] Falar de limitações:
+  - usamos MQ-7 (CO) como aproximação, não CO₂ real
+  - segurança MQTT básica
+  - só uma ala / protótipo
+
+---
+
+## 7. Objetivo final de demo
+
+No fim queremos mostrar ao professor:
+
+1. Um lugar que sabe dizer “livre/ocupado”, acende LED e envia esse estado.
+2. Uma ala com ENTRADA e SAÍDA separadas que mantém `ocupacao_ala` com ++ / --.
+3. O sistema a detetar diferença entre `ocupacao_ala` e soma dos lugares ocupados, e marcar alerta.
+4. O Raspberry Pi a prever que a ala vai encher e a mandar subir a ventoinha antes do ar ficar mau.
+5. O dashboard com tudo em tempo real.
+
+Se estes 5 pontos funcionarem, o projeto está sólido. # 0, ja esta feita
