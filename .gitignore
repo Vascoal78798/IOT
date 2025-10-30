@@ -1,0 +1,74 @@
+# -----------------
+# ARDUINO / C / C++
+# -----------------
+*.o
+*.obj
+*.elf
+*.hex
+*.bin
+*.map
+*.d
+*.pyc
+*.lst
+*.eep
+*.lss
+*.sprj
+*.depend
+*.cache
+*.arduino.json
+*.arduino.ide.json
+
+# Diretórios típicos de build (Arduino IDE / PlatformIO / etc)
+build/
+Build/
+cmake-build*/
+.pio/
+.pioenvs/
+.piolibdeps/
+.vscode/.pio
+.tmp/
+
+# Diretórios temporários de bibliotecas Arduino
+libraries/*/*.zip
+*.bak
+
+# -----------------
+# PYTHON (Raspberry Pi scripts)
+# -----------------
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.env
+.venv
+venv/
+env/
+ENV/
+*.sqlite-journal
+
+# Se usarem um ficheiro de config local com passwords/tokens
+config_local.json
+secrets.json
+
+# -----------------
+# NODE-RED / DASHBOARD / WEB
+# -----------------
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# ficheiros temporários de runtime do Node-RED
+flows_cred.json
+*.backup
+*.log
+
+# -----------------
+# SISTEMA / EDITOR
+# -----------------
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
