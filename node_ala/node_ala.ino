@@ -9,6 +9,9 @@
 #include <Arduino.h>
 #include <cstring>
 
+// Declaração antecipada para permitir chamadas antes da definição
+void enviarEstadoResumo(bool forcar = false);
+
 // ---- Configuração de hardware ----
 constexpr uint8_t ENTRADA_ANALOG_PIN = A0;
 constexpr uint8_t SAIDA_ANALOG_PIN = A1;
@@ -67,6 +70,8 @@ bool detetarVeiculo(SensorUltrassonico &sensor) {
   return false;
 }
 
+// ---- 2.6 Envio de dados para o Pi (Serial JSON) ----
+// Eventos simples de entrada/saída com total acumulado
 void enviarEvento(const char *evento, int total) {
   Serial.print('{');
   Serial.print("\"evento\":\"");
@@ -78,6 +83,7 @@ void enviarEvento(const char *evento, int total) {
   Serial.println('}');
 }
 
+// Envia amostras de qualidade do ar (valor relativo + tensão calculada)
 void enviarQualidadeAr(float valorBruto, float tensao) {
   Serial.print('{');
   Serial.print("\"evento\":\"qualidade_ar\",");
@@ -90,6 +96,7 @@ void enviarQualidadeAr(float valorBruto, float tensao) {
   Serial.println('}');
 }
 
+// Confirma ao Pi o estado atual da ventoinha (percentagem)
 void enviarEstadoVentoinha() {
   Serial.print('{');
   Serial.print("\"evento\":\"ventoinha\",");
@@ -120,6 +127,8 @@ void atualizarQualidadeAr() {
   enviarEstadoResumo(false);
 }
 
+// ---- 2.4 Ventoinha: recebe % do Pi, aplica via PWM e confirma estado ----
+// Lê comandos JSON do Pi: "percent" (0..100) e "lugares_ocupados"
 void atualizarVentoinha() {
   bool alterou = false;
   while (Serial.available() > 0) {
@@ -226,12 +235,14 @@ bool extrairInteiro(const String &linha, const char *chave, int &valor) {
   return true;
 }
 
+// Aplica o duty-cycle PWM correspondente à percentagem da ventoinha
 void aplicarPWMVentoinha() {
   int duty = map(ventoinhaPercentual, 0, 100, 0, 255);
   analogWrite(VENTOINHA_PWM_PIN, duty);
 }
 
-void enviarEstadoResumo(bool forcar = false) {
+// Envia estado agregado para o Pi (ocupação, ar, ventoinha, alerta)
+void enviarEstadoResumo(bool forcar) {
   unsigned long agora = millis();
   if (!forcar && (agora - ultimoEnvioEstadoMs) < ESTADO_INTERVALO_MS) {
     return;
@@ -257,6 +268,9 @@ void enviarEstadoResumo(bool forcar = false) {
   Serial.println('}');
 }
 
+// ---- 2.5 Validação cruzada da ocupação ----
+// Compara contador da ala (entrada/saída) com soma dos lugares do Pi.
+// Se a diferença persistir acima de ALERTA_DELTA_MAX por ALERTA_PERSIST_MS, ativa alerta.
 void atualizarAlertaSensor() {
   unsigned long agora = millis();
   int delta = abs(ocupacaoAla - somaLugaresOcupados);
