@@ -1,0 +1,7 @@
+paho-mqtt==1.6.1
+pyserial==3.5
+PyYAML==6.0.1
+# Dependências para TinyML local
+numpy>=1.24.0
+# Instalar manualmente no Pi conforme arquitetura:
+# tflite-runtime

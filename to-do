@@ -113,76 +113,95 @@ Objetivo: contar carros, manter ocupação da ala, ler ar, controlar ventoinha e
 **Linguagem:** Python
 
 Tarefas:
-- [ ] Instalar e configurar Mosquitto MQTT.
-- [ ] Fazer script Python para:
-  - [ ] Receber dados dos Arduinos (MQTT ou série).
-  - [ ] Guardar dados em SQLite/InfluxDB (timestamp, ala, ocupacao_ala, qualidade_ar, ventoinha_percent...).
-  - [ ] Calcular previsão da ocupação:
-    - hora do dia / dia da semana
-    - ocupação média dos últimos 30–60 min
-    - fluxo de ENTRADAS nos últimos 5–15 min
-  - [ ] A partir da previsão:
-    - se vai encher → subir velocidade base da ventoinha
-    - se vai acalmar → baixar para o mínimo
-  - [ ] Regras de segurança:
-    - se qualidade_ar muito má → ventoinha = 100%
-    - se qualidade_ar boa → ventoinha = mínimo
-  - [ ] Enviar a % desejada da ventoinha para o Arduino da ala.
-  - [ ] Comparar `ocupacao_ala` (contador ENTRADA/SAÍDA) com soma dos lugares ocupados:
-    - se muito diferente → marcar alerta_sensor = true
+- [x] Preparação do ambiente
+  - [x] Instalar dependências (Python venv, paho-mqtt, sqlite3 client, tflite-runtime).
+  - [x] Configurar serviço Mosquitto MQTT (topics locais para lugar, ala e cloud).
+  - [x] Definir estrutura e localização da base SQLite (ficheiro, esquema de tabelas, índices).
+- [x] Ingestão de dados
+  - [x] Criar módulo Python que escuta MQTT/série dos Arduinos e normaliza mensagens.
+  - [x] Persistir cada evento em SQLite com timestamp normalizado.
+  - [x] Atualizar métricas em memória (ocupação, soma de lugares, qualidade do ar, ventoinha).
+- [x] Sincronização com a cloud
+  - [x] Agregar dados recentes (janelas de 30–60 s) e construir payload batch.
+  - [x] Implementar publicador MQTT/HTTP seguro para enviar lotes à cloud.
+  - [x] Implementar subscrição para receber comandos cloud → edge.
+  - [x] Tratar mensagens cloud (`percent`, `lugares_ocupados`, overrides) e repassar para o nó da ala.
+- [x] Previsão local (TinyML)
+  - [x] Preparar dataset local (ocupação, hora/dia, fluxo de entrada) e exportar para o Tiny ML Kit.
+  - [x] Treinar modelo no Tiny Machine Learning Kit (TensorFlow Lite Micro) e validar métricas.
+  - [x] Converter modelo para `.tflite`, armazenar versão e copiar para o Pi.
+  - [x] Implementar inferência com `tflite-runtime` no Pi (carregar modelo, executar previsões periódicas).
+  - [x] Combinar previsão local com comandos da cloud e regras de segurança para gerar `percent` final.
+- [x] Controlo e segurança
+  - [x] Regras de segurança (qualidade_ar alta → ventoinha 100%, etc.).
+  - [x] Carregar capacidade máxima da ala (config local/cloud) e calcular percentagem de ocupação.
+  - [x] Enviar comandos resultantes para o nó da ala e confirmar ACK.
+  - [x] Comparar `ocupacao_ala` vs `lugares_ocupados` e sinalizar `alerta_sensor` persistente.
 
----
+### 3.1 Integração Cloud
+- [ ] Escolher plataforma (AWS IoT Core / Azure IoT Hub / Google IoT Core) e criar projeto.
+- [ ] Criar tópicos MQTT/REST (ex.: `pi/alaA/telemetry`, `cloud/alaA/commands`).
+- [ ] Configurar autenticação (certificados TLS/keys) e políticas de segurança.
+- [ ] Implementar função/broker para gravar dados em DB gerida (Timestream/DynamoDB, Cosmos DB, Firestore...).
+- [ ] Criar API/endpoint para devolver comandos ou previsões ao Pi.
+- [ ] Definir estratégia de retenção e limpeza de dados históricos.
 
-## 4. Dashboard
+### 3.2 TinyML / Machine Learning
+- [ ] Captar dataset inicial (mínimo 24 h) para treino.
+- [ ] Pré-processar dados no PC/Pi (normalização, features de tempo, fluxo acumulado).
+- [ ] Treinar modelo no Tiny Machine Learning Kit (TensorFlow Lite Micro) e salvar logs.
+- [ ] Avaliar modelo (RMSE/MAE) e iterar se necessário.
+- [ ] Converter para `.tflite` otimizado e versionar.
+- [ ] Automatizar processo de atualização: copiar novo modelo para o Pi e recarregar sem reboot.
+- [ ] Planear re-treino periódico (manual ou triggered pela cloud quando existir novo dataset).
 
-**Corre em:** Raspberry Pi  
-**Linguagem:** Node-RED (JS simples) OU Flask (Python) + HTML/JS
+## 4. Dashboard e Visualização
 
-Tarefas:
-- [ ] Mostrar por ala:
-  - Lugares livres / ocupados
-  - `ocupacao_ala`
-  - `alerta_sensor` (sim/não)
-  - `qualidade_ar`
-  - `ventoinha_percent`
-  - “vai encher” / “vai aliviar”
-- [ ] Mostrar aviso para o admin:
-  - “Ala A quase cheia → abrir Ala B?”
-- [ ] Mostrar página simples para utilizador normal:
-  - “Ala A: X lugares livres agora”
-
----
+**Opção cloud preferencial**  
+- [ ] Selecionar ferramenta (Power BI, Grafana Cloud, Looker Studio ou web app próprio).
+- [ ] Definir modelo de dados (vistas ocupação, qualidade ar, alertas, previsões).
+- [ ] Configurar ligação à base cloud e atualizações em tempo real.
+- [ ] Construir painéis:
+  - [ ] Vista admin: ocupação por ala, `alerta_sensor`, qualidade do ar, ventoinha, previsões.
+  - [ ] Vista utilizador: lugares livres por ala e tendências.
+  - [ ] Cartões de alerta (“Ala A quase cheia”, “Qualidade do ar má”).
+- [ ] Implementar autenticação/controlos de acesso.
+- [ ] Publicar/partilhar dashboard e documentar instruções de acesso.
 
 ## 5. Testes
 
 - [ ] Nó do lugar:
-  - Meter/tirar objeto → LED muda e envia estado.
+  - [ ] Meter/tirar objeto → LED muda e envia estado.
+  - [ ] Verificar mensagem MQTT/serial com ID e timestamp corretos.
 - [ ] Nó da ala:
-  - Passar algo pelo sensor da ENTRADA → contador++.
-  - Passar algo pelo sensor da SAÍDA → contador--.
-  - Ver se não conta duas vezes devido ao debounce.
-- [ ] Comparação:
-  - Forçar diferença entre `ocupacao_ala` e soma dos lugares ocupados → ver `alerta_sensor`.
-- [ ] Ventilação:
-  - Simular muitos carros a entrar → Pi prevê encher → manda subir ventoinha.
-  - Simular calma → Pi manda baixar.
-  - Forçar ar “mau” → ventoinha = 100%.
+  - [ ] Passar objeto pelo sensor da ENTRADA → contador++ e JSON `entrada`.
+  - [ ] Passar objeto pelo sensor da SAÍDA → contador-- e JSON `saida`.
+  - [ ] Validar debounce (não contar duas vezes no mesmo movimento).
+  - [ ] Forçar diferença entre `ocupacao_ala` e `lugares_ocupados` → `alerta_sensor` ativo após tempo definido.
+  - [ ] Confirmar que ventoinha responde a `percent` e reporta estado.
+- [ ] Gateway / TinyML / Cloud:
+  - [ ] Testar pipeline de ingestão Pi → DB local.
+  - [ ] Verificar envio batch Pi → cloud e armazenamento correto.
+  - [ ] Enviar comando cloud → Pi → nó da ala (latência e ACK).
+  - [ ] Executar inferência TinyML com dados reais (comparar previsão vs ocupação medida).
+  - [ ] Simular override cloud e garantir que regras de segurança prevalecem.
 - [ ] Dashboard:
-  - Ver ocupação, previsão, qualidade do ar, alerta e ventoinha em tempo real.
-
----
+  - [ ] Visualizar métricas em tempo real.
+  - [ ] Validar previsões/local vs cloud.
+  - [ ] Verificar alertas e mensagens para utilizador/admin.
 
 ## 6. Relatório / apresentação
 
 - [ ] Explicar o problema que estamos a resolver (gestão de parque por alas + qualidade do ar).
-- [ ] Mostrar a arquitetura (nó do lugar → nó da ala → Pi → dashboard).
-- [ ] Dizer que corre em Arduino (C/C++) e em Raspberry Pi (Python).
-- [ ] Mostrar capturas do dashboard.
-- [ ] Explicar previsão + ventilação feed-forward numa frase simples.
+- [ ] Mostrar a arquitetura (nó do lugar → nó da ala → Pi → cloud → dashboard).
+- [ ] Dizer que corre em Arduino (C/C++), Raspberry Pi (Python + TinyML) e cloud.
+- [ ] Mostrar capturas do dashboard cloud.
+- [ ] Explicar previsão + ventilação feed-forward + papel do TinyML.
 - [ ] Falar de limitações:
   - usamos MQ-7 (CO) como aproximação, não CO₂ real
   - segurança MQTT básica
   - só uma ala / protótipo
+  - sincronização com a cloud feita em modo batch
 
 ---
 

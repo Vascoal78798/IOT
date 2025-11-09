@@ -1,0 +1,77 @@
+# Caminho para o ficheiro SQLite (será criado automaticamente se não existir)
+sqlite_db_path: /home/pi/iot_gateway/iot.db
+
+# Capacidade máxima de cada ala
+alas:
+  A:
+    capacidade_maxima: 20
+    soma_lugares_inicial: 0
+    safety:
+      default_percent: 35
+      qualidade_ar_threshold: 3.5
+      qualidade_ar_percent: 100
+      alerta_sensor_percent: 100
+      mismatch_delta: 3
+      mismatch_duration_seconds: 5
+      ack_timeout_seconds: 5
+      occupancy_rules:
+        - percent_min: 95
+          ventoinha_percent: 100
+        - percent_min: 85
+          ventoinha_percent: 90
+        - percent_min: 70
+          ventoinha_percent: 75
+
+# Dispositivos série ligados ao Pi
+serial_devices:
+  - path: /dev/ttyACM0
+    tipo: lugar
+    id_lugar: A-01
+    baudrate: 115200
+  - path: /dev/ttyACM1
+    tipo: ala
+    id_ala: A
+    baudrate: 115200
+
+# Configuração opcional de MQTT local e cloud
+mqtt:
+  enabled: true
+  broker: 127.0.0.1
+  port: 1883
+  username: null
+  password: null
+  topics:
+    lugar: alaA/lugares
+    ala: alaA/ala
+    cloud_out: pi/alaA/telemetry
+    cloud_in: cloud/alaA/commands
+
+# Intervalos (em segundos)
+intervalos:
+  sync_cloud: 60
+  resumo_stdout: 10
+  sync_batch_limit: 200
+
+# TinyML local (opcional)
+tinyml:
+  enabled: true
+  ala_id: A
+  dataset_path: /home/pi/iot_gateway/data/alaA_dataset.csv
+  model_path: /home/pi/iot_gateway/models/alaA_forecast.tflite
+  metrics_path: /home/pi/iot_gateway/data/alaA_metrics.json
+  horizon_minutes: 5
+  flux_window_seconds: 180
+  inference_interval_seconds: 60
+  override_ttl_seconds: 300
+  safety_quality_threshold: 3.5
+  safety_full_percent: 100
+  min_dataset_rows: 40
+  recommendation:
+    baseline_percent: 35
+    thresholds:
+      - limite_percent: 95
+        percent: 100
+      - limite_percent: 85
+        percent: 90
+      - limite_percent: 70
+        percent: 75

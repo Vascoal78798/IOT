@@ -7,9 +7,10 @@ O objetivo do projeto é desenvolver um sistema de estacionamento inteligente or
 
 - Dizer em tempo real que lugares estão livres e quais estão ocupados.
 - Contar quantos carros entram e saem em cada ala, para confirmar se os sensores dos lugares estão a reportar bem.
-- Mostrar tudo num dashboard (interface visual).
-- Prever a ocupação nas próximas horas, com base em padrões reais de uso.
+- Mostrar tudo num dashboard (interface visual) hospedado na cloud.
+- Prever a ocupação nas próximas horas (TinyML no edge + reforço cloud), com base em padrões reais de uso.
 - Controlar a ventilação (fan) de cada ala de forma antecipada, para manter o ar aceitável quando há muita gente / muitos carros.
+- Sincronizar dados para a cloud para histórico, analítica e comandos remotos.
 
 A ideia não é só “um sensor num lugar e acabou”. É um sistema IoT completo, com vários níveis:
 - Nós com sensores e atuadores (Arduino).
@@ -73,55 +74,57 @@ O nó da ala envia para o Raspberry Pi:
 ---
 
 ### 2.3 Gateway (Raspberry Pi)
-O Raspberry Pi faz de cérebro central / servidor.
+O Raspberry Pi continua a ser o hub edge e faz a ponte para a cloud.
 
-Funções:
-- Recebe dados de todos os Arduinos (via série USB ou via MQTT).
-- Guarda histórico localmente (por exemplo, SQLite ou InfluxDB).
-- Faz previsão da ocupação de cada ala para os próximos minutos.  
-  - Usa hora do dia, dia da semana, histórico recente e fluxo de entradas recentes (quantos carros entraram na ENTRADA da ala nos últimos minutos).
-- Decide a velocidade base da ventoinha por ala de forma antecipada:
-  - Se prevê que a ala vai encher, sobe a ventoinha antes do ar ficar mau.
-  - Se prevê que a ala vai aliviar, baixa.
-
-- Aplica regras de segurança:
-  - Se o valor do sensor de ar estiver muito alto → ventoinha = 100%.
-  - Se estiver limpo → ventoinha = mínimo (por ex. 20%).
-
-- Compara também a ocupação reportada pelos lugares com a ocupação calculada pela contagem entrada/saída (`ocupacao_ala`) para validar se os sensores estão coerentes.
-
-O Pi envia comandos de volta para o Arduino da ala, por exemplo “ventoinha = 60%”.
+Funções principais:
+- Recebe dados de todos os Arduinos (via MQTT ou série) e valida a ocupação localmente.
+- Guarda histórico recente (SQLite/InfluxDB) para redundância.
+- Agrega as métricas por ala e sincroniza lotes com a cloud (MQTT/HTTP seguro).
+- Corre inferência de um modelo TinyML (treinado no Tiny Machine Learning Kit) para prever ocupação e antecipar ventilação.
+- Aplica regras de segurança imediatas:
+  - qualidade do ar muito má → ventoinha = 100%
+  - qualidade do ar boa → ventoinha = mínimo
+- Recebe da cloud recomendações/overrides (ex.: `percent`, `lugares_ocupados`) e envia comandos para o nó da ala.
 
 **Corre em:** Raspberry Pi  
-**Linguagem:** Python  
-**Tecnologias usadas:** Python scripts, MQTT broker (Mosquitto)
+**Linguagem:** Python (MQTT, tflite-runtime, SQLite/InfluxDB)
 
 ---
 
-### 2.4 Dashboard
-O dashboard mostra o estado do parque para duas pessoas diferentes:
-- utilizador normal (onde posso estacionar agora?)
-- administrador (isto está a encher, abro outra ala? qualidade do ar está ok?)
+### 2.4 Camada Cloud
+A cloud fornece armazenamento durável, analítica e dashboards.
 
-O dashboard apresenta:
-- Lugares livres e ocupados por ala.
-- Ocupação total por ala (`ocupacao_ala`).
-- Alerta de sensores (se há inconsistência).
-- Qualidade do ar.
-- Velocidade atual da ventoinha.
-- “Vai encher” / “vai aliviar” (previsão perto do tempo real).
+Responsabilidades:
+- Ingestão de dados provenientes do Pi (MQTT IoT Core / HTTP).
+- Persistência em base de dados gerida (ex.: DynamoDB/Timestream, Cosmos DB, Firestore...).
+- Serviços de analítica/ML adicionais (SageMaker, Azure ML, Vertex AI) caso seja necessário re-treinar modelos mais pesados.
+- Exposição de APIs para enviar comandos de volta ao Pi ou disponibilizar dados ao dashboard.
 
-**Corre em:** Raspberry Pi  
-**Linguagem / stack possível:**
-- Opção rápida: Node-RED (fluxos visuais + JS mínimo)
-- Opção personalizada: Flask (Python) + HTML/CSS/JS
+---
+
+### 2.5 Dashboard
+
+O dashboard passa a viver na cloud (Power BI, Grafana Cloud, Looker Studio ou web app dedicado).
+
+Mostra em tempo real:
+- Lugares livres / ocupados por ala.
+- `ocupacao_ala` vs `soma_lugares` e `alerta_sensor`.
+- Qualidade do ar e `ventoinha_percent` atual.
+- Indicadores “vai encher” / “vai aliviar” com base no TinyML + previsões cloud.
+- Alertas operacionais (ex.: “Ala A quase cheia → abrir Ala B?”).
+
+Também disponibiliza uma vista simples para utilizador normal com os lugares ainda livres.
 
 ---
 
 ## 3. Comunicação e Mensagens
 
-Os nós (Arduinos) comunicam com o Raspberry Pi usando MQTT (ou série, se quisermos começar simples).  
-Formato típico de mensagem (JSON):
+Os nós (Arduinos) comunicam com o Raspberry Pi usando MQTT (ou série, na fase de protótipo). O Pi agrega e repassa os dados para a cloud, mantendo dois fluxos principais:
+
+1. **Edge → Cloud:** Pacotes JSON com métricas por ala/lugar (ocupação, qualidade do ar, ventoinha, alerta) enviados de forma batched para a cloud.
+2. **Cloud → Edge:** Comandos ou recomendações (ex.: `{"percent":70,"lugares_ocupados":12}`) que o Pi encaminha para o nó da ala.
+
+Formato típico (edge → cloud):
 
 ```json
 {
@@ -129,11 +132,13 @@ Formato típico de mensagem (JSON):
   "lugar": "A-03",
   "estado_lugar": "ocupado",
   "ocupacao_ala": 12,
+  "soma_lugares": 11,
   "qualidade_ar": 410,
   "ventoinha_percent": 60,
   "alerta_sensor": false,
   "timestamp": "2025-10-30T12:15:00Z"
 }
+```
 
 ---
 
@@ -150,41 +155,36 @@ Formato típico de mensagem (JSON):
 Isto permite detetar falhas de sensores dos lugares sem ter de ir fisicamente verificar.
 
 ### 4.2 Previsão de ocupação
-No Raspberry Pi, em Python:
-- Usa hora do dia e dia da semana (padrões de utilização).
-- Usa ocupação média dos últimos 30–60 minutos.
-- Usa o fluxo recente na ENTRADA (quantos carros entraram nos últimos 5–15 min).
-- Com isso, calcula se a ala vai encher ou vai aliviar nos próximos minutos.
-
-Essa previsão:
-- aparece no dashboard (“vai encher” / “vai aliviar”)
-- e é usada para controlar a ventoinha.
+- O dataset é preparado no Pi e sincronizado com a cloud.
+- O treino inicial é feito no Tiny Machine Learning Kit (TensorFlow Lite Micro), gerando um modelo `.tflite` que é colocado no Pi.
+- O Pi corre inferência local a cada ciclo (tflite-runtime) usando hora/dia, ocupação média e fluxo recente.
+- Opcionalmente, serviços cloud podem re-treinar modelos mais pesados e enviar novos parâmetros para o Pi.
 
 ### 4.3 Ventilação antecipada (feed-forward)
-Cada ala tem um sensor de ar (por exemplo MQ-7 para CO).
+1. O Pi combina o resultado TinyML com regras de segurança e com recomendações vindas da cloud.
+2. Se prevê que a ala vai encher → sobe a ventilação antes do ar degradar.
+3. Se prevê que vai acalmar → baixa para o mínimo.
+4. A cloud pode enviar overrides (ex.: eventos de manutenção).
+5. Segurança local tem sempre prioridade (ar muito mau → 100%).
 
-Lógica:
-1. Se a previsão diz que a ala vai encher → o Raspberry Pi manda subir a velocidade base da ventoinha (por ex. 60%, 80%).
-2. Se a previsão diz que vai acalmar → manda baixar para o mínimo (ex. 20%).
-3. Segurança:
-   - Se o ar já está mau → ventoinha 100%.
-   - Se o ar está bom → fica no mínimo.
-
-Isto é feed-forward: reagir ANTES do ar ficar mau.  
-O Raspberry Pi envia a % desejada e o Arduino da ala gera o PWM físico.
+### 4.4 Analítica na Cloud
+- Dashboards e relatórios em tempo real sobre ocupação, qualidade do ar e alertas.
+- Comparação entre previsão local (TinyML) e previsões cloud.
+- Histórico longo prazo para decisões de expansão do parque.
 
 ---
 
 ## 5. Resumo das Linguagens e Onde Corre
 
-| Parte                              | Corre onde          | Linguagem / Ferramentas                   |
-|-----------------------------------|---------------------|-------------------------------------------|
-| Nó do lugar (sensor + LED)        | Arduino UNO R4 WiFi | C/C++ (Arduino IDE / PlatformIO)          |
-| Nó da ala (entrada/saída/ar/fan)  | Arduino UNO R4 WiFi | C/C++ (Arduino)                           |
-| Gateway / previsão / lógica       | Raspberry Pi        | Python                                    |
-| Comunicação MQTT                  | Raspberry Pi        | Mosquitto (broker MQTT) + libs C++/Python |
-| Dashboard                         | Raspberry Pi        | Node-RED (JS simples) ou Flask (Python + HTML/JS) |
-| Base de dados / histórico         | Raspberry Pi        | Python (SQLite ou InfluxDB)               |
+| Parte                              | Corre onde          | Linguagem / Ferramentas                              |
+|-----------------------------------|---------------------|------------------------------------------------------|
+| Nó do lugar (sensor + LED)        | Arduino UNO R4 WiFi | C/C++ (Arduino IDE / PlatformIO)                     |
+| Nó da ala (entrada/saída/ar/fan)  | Arduino UNO R4 WiFi | C/C++ (Arduino)                                      |
+| Gateway / previsão / lógica       | Raspberry Pi        | Python, MQTT, tflite-runtime, SQLite/InfluxDB        |
+| Comunicação MQTT                  | Raspberry Pi / Cloud| Mosquitto, IoT Core (TLS), bibliotecas MQTT          |
+| Cloud (armazenamento/analítica)   | AWS/Azure/GCP       | IoT Core + DynamoDB/Timestream/Cosmos/etc., Python   |
+| Dashboard                         | Cloud (BI/Web app)  | Grafana/Power BI/Looker Studio ou web app (JS/Python)|
+| Treino TinyML                     | Tiny ML Kit / PC    | TensorFlow Lite Micro, scripts de preparação de dados|
 
 ---
 
@@ -193,9 +193,9 @@ O Raspberry Pi envia a % desejada e o Arduino da ala gera o PWM físico.
 No final queremos conseguir mostrar:
 
 1. Um lugar que deteta se está ocupado ou livre, acende LED e envia estado.
-2. Uma ala que tem ENTRADA e SAÍDA físicas separadas e mantém `ocupacao_ala` com ++ e --.
+2. Uma ala que tem ENTRADA e SAÍDA físicas separadas e mantém `ocupacao_ala` com ++ / --.
 3. O sistema a detetar diferença entre `ocupacao_ala` e a soma dos lugares ocupados, e gerar `alerta_sensor`.
-4. O Raspberry Pi a prever que a ala vai encher e a mandar subir a ventoinha antes do ar ficar mau.
-5. Um dashboard com tudo em tempo real (ocupação, previsão, ar, aviso de abrir nova ala).
+4. O Raspberry Pi a prever que a ala vai encher (modelo TinyML treinado no Tiny Machine Learning Kit) e a mandar subir a ventoinha antes do ar ficar mau, combinando regras de segurança.
+5. Sincronização de dados com a cloud, dashboard cloud em tempo real e capacidade de enviar comandos de volta (override de ventoinha, alertas).
 
 Isto junta eletrónica, firmware, comunicação, previsão e interface — um projeto IoT completo.
