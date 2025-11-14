@@ -139,12 +139,12 @@ Tarefas:
   - [x] Comparar `ocupacao_ala` vs `lugares_ocupados` e sinalizar `alerta_sensor` persistente.
 
 ### 3.1 Integração Cloud
-- [ ] Escolher plataforma (AWS IoT Core / Azure IoT Hub / Google IoT Core) e criar projeto.
-- [ ] Criar tópicos MQTT/REST (ex.: `pi/alaA/telemetry`, `cloud/alaA/commands`).
-- [ ] Configurar autenticação (certificados TLS/keys) e políticas de segurança.
-- [ ] Implementar função/broker para gravar dados em DB gerida (Timestream/DynamoDB, Cosmos DB, Firestore...).
-- [ ] Criar API/endpoint para devolver comandos ou previsões ao Pi.
-- [ ] Definir estratégia de retenção e limpeza de dados históricos.
+- [x] Escolher plataforma (AWS IoT Core / Azure IoT Hub / Google IoT Core) e criar projeto.
+- [x] Criar tópicos MQTT/REST (ex.: `pi/alaA/telemetry`, `cloud/alaA/commands`).
+- [x] Configurar autenticação (certificados TLS/keys) e políticas de segurança.
+- [x] Implementar função/broker para gravar dados em DB gerida (Timestream/DynamoDB, Cosmos DB, Firestore...).
+- [x] Criar API/endpoint para devolver comandos ou previsões ao Pi.
+- [x] Definir estratégia de retenção e limpeza de dados históricos.
 
 ### 3.2 TinyML / Machine Learning
 - [ ] Captar dataset inicial (mínimo 24 h) para treino.

@@ -149,6 +149,9 @@ nano gateway_pi/config.yaml
 - Secção `tinyml` (opcional):
   - Aponta `dataset_path`, `model_path` e `metrics_path` para locais reais (por ex. `/home/pi/iot_gateway/models/alaA.tflite`).
   - Se ainda não tens modelo, podes pôr `enabled: false` temporariamente.
+- Secção `cloud`:
+  - Para AWS IoT Core segue o guia `cloud/AWS_IoT_Core_Setup.md` (criação do Thing, tópicos, certificados, API).
+  - Introduz os caminhos dos certificados e os tópicos que definiste na plataforma escolhida.
 
 Grava (`Ctrl+O`, Enter) e sai (`Ctrl+X`).
 

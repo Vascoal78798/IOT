@@ -20,13 +20,19 @@ import queue
 import sqlite3
 import threading
 import time
+import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, TYPE_CHECKING
 
 import serial  # type: ignore
 import yaml  # type: ignore
+
+try:
+    import requests  # type: ignore
+except ImportError:  # pragma: no cover - opcional
+    requests = None  # type: ignore
 
 try:
     import paho.mqtt.client as mqtt  # type: ignore
@@ -122,6 +128,45 @@ class AlaConfig:
 
 
 @dataclass
+class CloudRetentionConfig:
+    retention_days: int = 30
+    purge_interval_hours: int = 24
+
+
+@dataclass
+class CloudRESTConfig:
+    enabled: bool
+    base_url: str
+    api_key: Optional[str] = None
+    timeout: int = 10
+    verify_tls: bool = True
+
+
+@dataclass
+class CloudMQTTConfig:
+    enabled: bool
+    endpoint: str
+    port: int = 8883
+    client_id: Optional[str] = None
+    ca_cert: Optional[str] = None
+    certfile: Optional[str] = None
+    keyfile: Optional[str] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+    topics: Dict[str, str] = field(default_factory=dict)
+    keepalive: int = 60
+    tls_insecure: bool = False
+
+
+@dataclass
+class CloudConfig:
+    provider: str
+    mqtt: Optional[CloudMQTTConfig] = None
+    rest: Optional[CloudRESTConfig] = None
+    retention: CloudRetentionConfig = field(default_factory=CloudRetentionConfig)
+
+
+@dataclass
 class GatewayConfig:
     sqlite_db_path: Path
     serial_devices: list[SerialDeviceConfig]
@@ -129,6 +174,7 @@ class GatewayConfig:
     mqtt: Optional[MQTTConfig] = None
     intervalos: Dict[str, int] = field(default_factory=dict)
     tinyml: Optional["TinyMLRuntimeConfigType"] = None
+    cloud: Optional[CloudConfig] = None
 
 
 def load_config(path: Path) -> GatewayConfig:
@@ -151,6 +197,11 @@ def load_config(path: Path) -> GatewayConfig:
     if raw_tinyml and TinyMLRuntimeConfig:
         tinyml_cfg = _parse_tinyml_config(raw_tinyml)
 
+    cloud_cfg = None
+    raw_cloud = raw.get("cloud")
+    if raw_cloud:
+        cloud_cfg = _parse_cloud_config(raw_cloud)
+
     return GatewayConfig(
         sqlite_db_path=Path(raw.get("sqlite_db_path", "iot_gateway.db")),
         serial_devices=serial_devices,
@@ -158,6 +209,7 @@ def load_config(path: Path) -> GatewayConfig:
         mqtt=mqtt_cfg,
         intervalos=raw.get("intervalos", {}),
         tinyml=tinyml_cfg,
+        cloud=cloud_cfg,
     )
 
 
@@ -255,6 +307,50 @@ def _parse_ala_safety(raw: Optional[Dict[str, Any]]) -> Optional[AlaSafetyConfig
         ack_timeout_seconds=int(raw.get("ack_timeout_seconds", 5)),
         occupancy_rules=occupancy_rules,
     )
+
+
+def _parse_cloud_config(raw: Dict[str, Any]) -> CloudConfig:
+    if not isinstance(raw, dict):
+        raise ValueError("Configuração 'cloud' inválida.")
+
+    retention_raw = raw.get("retention", {})
+    retention_cfg = CloudRetentionConfig(
+        retention_days=int(retention_raw.get("retention_days", 30)),
+        purge_interval_hours=int(retention_raw.get("purge_interval_hours", 24)),
+    )
+
+    mqtt_cfg = None
+    raw_mqtt = raw.get("mqtt")
+    if raw_mqtt:
+        topics = raw_mqtt.get("topics", {}) if isinstance(raw_mqtt.get("topics"), dict) else {}
+        mqtt_cfg = CloudMQTTConfig(
+            enabled=bool(raw_mqtt.get("enabled", False)),
+            endpoint=str(raw_mqtt.get("endpoint", "")),
+            port=int(raw_mqtt.get("port", 8883)),
+            client_id=raw_mqtt.get("client_id"),
+            ca_cert=raw_mqtt.get("ca_cert"),
+            certfile=raw_mqtt.get("certfile"),
+            keyfile=raw_mqtt.get("keyfile"),
+            username=raw_mqtt.get("username"),
+            password=raw_mqtt.get("password"),
+            topics=topics,
+            keepalive=int(raw_mqtt.get("keepalive", 60)),
+            tls_insecure=bool(raw_mqtt.get("tls_insecure", False)),
+        )
+
+    rest_cfg = None
+    raw_rest = raw.get("rest")
+    if raw_rest:
+        rest_cfg = CloudRESTConfig(
+            enabled=bool(raw_rest.get("enabled", False)),
+            base_url=str(raw_rest.get("base_url", "")),
+            api_key=raw_rest.get("api_key"),
+            timeout=int(raw_rest.get("timeout", 10)),
+            verify_tls=bool(raw_rest.get("verify_tls", True)),
+        )
+
+    provider = str(raw.get("provider", "aws_iot_core"))
+    return CloudConfig(provider=provider, mqtt=mqtt_cfg, rest=rest_cfg, retention=retention_cfg)
 
 
 # ---------------------------------------------------------------------------
@@ -458,12 +554,33 @@ class Gateway:
             (reader for reader in self.serial_threads if reader.device_cfg.tipo == "ala"), None
         )
         self.mqtt_client = self._init_mqtt(config.mqtt) if config.mqtt and config.mqtt.enabled else None
+        self.cloud_config = config.cloud
+        self.cloud_mqtt_client: Optional["MQTTClientType"] = None
+        self.cloud_rest_config: Optional[CloudRESTConfig] = None
+        self._cloud_topics: Dict[str, str] = {}
+        self._cloud_command_topic: Optional[str] = None
         self._sync_cloud_interval = max(0, config.intervalos.get("sync_cloud", 60))
         self._sync_batch_limit = config.intervalos.get("sync_batch_limit", 200)
         self._last_sync_time = time.time()
         self._last_synced_at = datetime.now(timezone.utc).isoformat()
         self.tinyml_runtime: Optional["TinyMLRuntimeType"] = None
         self._cloud_overrides: Dict[str, Tuple[int, Optional[float]]] = {}
+        self._retention_config = self.cloud_config.retention if self.cloud_config else None
+        purge_interval = (
+            self._retention_config.purge_interval_hours * 3600
+            if self._retention_config and self._retention_config.purge_interval_hours > 0
+            else None
+        )
+        self._next_purge_time = time.time() + purge_interval if purge_interval else None
+        if self.cloud_config and self.cloud_config.mqtt and self.cloud_config.mqtt.enabled:
+            self._cloud_topics = self.cloud_config.mqtt.topics or {}
+            self._cloud_command_topic = self._cloud_topics.get("cloud_in")
+            self.cloud_mqtt_client = self._init_cloud_mqtt(self.cloud_config.mqtt)
+        if self.cloud_config and self.cloud_config.rest and self.cloud_config.rest.enabled:
+            if requests is None:
+                LOGGER.warning("Biblioteca 'requests' não disponível; envio REST para a cloud será ignorado.")
+            else:
+                self.cloud_rest_config = self.cloud_config.rest
         if config.tinyml and config.tinyml.enabled and TinyMLRuntime:
             self.state_tracker.ensure_ala(config.tinyml.ala_id)
             try:
@@ -479,6 +596,7 @@ class Gateway:
             while True:
                 self._maybe_sync_cloud()
                 self._maybe_run_tinyml()
+                self._maybe_purge_old_records()
                 self._check_pending_acks()
                 try:
                     message = self.serial_queue.get(timeout=0.5)
@@ -497,6 +615,8 @@ class Gateway:
             self.conn.close()
         if self.mqtt_client:
             self.mqtt_client.disconnect()
+        if self.cloud_mqtt_client:
+            self.cloud_mqtt_client.disconnect()
 
     # ------------------------------------------------------------------
     # MQTT (opcional)
@@ -514,13 +634,126 @@ class Gateway:
         client.loop_start()
         return client
 
-    def _publish_mqtt(self, topic_key: str, payload: Dict[str, Any]) -> None:
+    def _publish_local_mqtt(self, topic_key: str, payload: Dict[str, Any]) -> None:
         if not self.mqtt_client or not self.config.mqtt:
             return
         topic = self.config.mqtt.topics.get(topic_key)
         if not topic:
             return
         self.mqtt_client.publish(topic, json.dumps(payload))
+
+    def _init_cloud_mqtt(self, cfg: CloudMQTTConfig) -> Optional["MQTTClientType"]:
+        if mqtt is None:
+            LOGGER.warning("paho-mqtt não está instalado; MQTT cloud será ignorado")
+            return None
+        if not cfg.endpoint:
+            LOGGER.warning("Endpoint MQTT da cloud não definido.")
+            return None
+        client_id = cfg.client_id or f"gateway-{uuid.uuid4().hex}"
+        client = mqtt.Client(client_id=client_id)
+        if cfg.username or cfg.password:
+            client.username_pw_set(cfg.username, cfg.password)
+        if cfg.ca_cert or cfg.certfile or cfg.keyfile:
+            try:
+                client.tls_set(
+                    ca_certs=cfg.ca_cert,
+                    certfile=cfg.certfile,
+                    keyfile=cfg.keyfile,
+                )
+                client.tls_insecure_set(cfg.tls_insecure)
+            except Exception as exc:  # pragma: no cover - depende de certificados
+                LOGGER.error("Falha a configurar TLS para o MQTT cloud: %s", exc)
+                return None
+        client.on_connect = self._on_cloud_mqtt_connect
+        client.on_message = self._on_cloud_mqtt_message
+        try:
+            client.connect(cfg.endpoint, cfg.port, keepalive=cfg.keepalive)
+        except Exception as exc:  # pragma: no cover - depende de rede
+            LOGGER.error("Não foi possível ligar ao MQTT da cloud (%s:%s): %s", cfg.endpoint, cfg.port, exc)
+            return None
+        client.loop_start()
+        LOGGER.info(
+            "Cliente MQTT cloud ligado (%s:%s, provider=%s)",
+            cfg.endpoint,
+            cfg.port,
+            self.cloud_config.provider if self.cloud_config else "desconhecido",
+        )
+        return client
+
+    def _publish_cloud_mqtt(self, topic_key: str, payload: Dict[str, Any]) -> None:
+        if not self.cloud_mqtt_client or not self.cloud_config or not self.cloud_config.mqtt:
+            return
+        topic = self._cloud_topics.get(topic_key)
+        if not topic:
+            return
+        self.cloud_mqtt_client.publish(topic, json.dumps(payload))
+
+    def _publish_all(self, topic_key: str, payload: Dict[str, Any]) -> None:
+        self._publish_local_mqtt(topic_key, payload)
+        self._publish_cloud_mqtt(topic_key, payload)
+
+    def _has_cloud_destinations(self) -> bool:
+        local = bool(self.mqtt_client and self.config.mqtt)
+        cloud_mqtt = bool(self.cloud_mqtt_client and self.cloud_config and self.cloud_config.mqtt)
+        cloud_rest = bool(self.cloud_rest_config)
+        return local or cloud_mqtt or cloud_rest
+
+    def _send_cloud_rest(self, payload: Dict[str, Any]) -> None:
+        if not self.cloud_rest_config or not requests:
+            return
+        url = self.cloud_rest_config.base_url
+        if not url:
+            return
+        headers = {"Content-Type": "application/json"}
+        if self.cloud_rest_config.api_key:
+            headers["Authorization"] = f"Bearer {self.cloud_rest_config.api_key}"
+        try:
+            response = requests.post(
+                url,
+                json=payload,
+                headers=headers,
+                timeout=self.cloud_rest_config.timeout,
+                verify=self.cloud_rest_config.verify_tls,
+            )
+            if response.status_code >= 400:
+                LOGGER.warning(
+                    "Cloud REST respondeu com %s: %s",
+                    response.status_code,
+                    response.text[:200],
+                )
+        except Exception as exc:  # pragma: no cover - depende de rede
+            LOGGER.warning("Falha ao enviar dados REST para a cloud: %s", exc)
+
+    def _maybe_purge_old_records(self) -> None:
+        if not self._retention_config or self._retention_config.retention_days <= 0:
+            return
+        if self._next_purge_time is None:
+            return
+        now = time.time()
+        if now < self._next_purge_time:
+            return
+        retention_seconds = self._retention_config.retention_days * 86400
+        cutoff_dt = datetime.now(timezone.utc) - timedelta(seconds=retention_seconds)
+        cutoff_iso = cutoff_dt.isoformat()
+        tables = [
+            "place_events",
+            "ala_events",
+            "air_samples",
+            "fan_events",
+            "state_snapshots",
+            "tinyml_predictions",
+        ]
+        total = 0
+        for table in tables:
+            cursor = self.conn.execute(f"DELETE FROM {table} WHERE created_at < ?", (cutoff_iso,))
+            if cursor.rowcount and cursor.rowcount > 0:
+                total += cursor.rowcount
+        self.conn.commit()
+        LOGGER.info("Purgadas %s entradas antigas (cutoff=%s).", total, cutoff_iso)
+        if self._retention_config.purge_interval_hours > 0:
+            self._next_purge_time = now + self._retention_config.purge_interval_hours * 3600
+        else:
+            self._next_purge_time = None
 
     # ------------------------------------------------------------------
     # Serial message handling
@@ -574,7 +807,7 @@ class Gateway:
             "capacidade": ala_state.capacidade_maxima,
             "percent_ocupacao": ala_state.percent_ocupacao(),
         }
-        self._publish_mqtt("lugar", {"lugar": lugar_id, "estado": estado, "snapshot": snapshot})
+        self._publish_all("lugar", {"lugar": lugar_id, "estado": estado, "snapshot": snapshot})
         self._enforce_safety_rules(ala_id)
 
     # Processamento do nó da ala
@@ -674,14 +907,14 @@ class Gateway:
                 "alerta_sensor": ala_state.alerta_sensor,
             }
             LOGGER.info("[%s] Estado ala %s → %s", device.path, ala_id, resumo)
-            self._publish_mqtt("ala", resumo)
+            self._publish_all("ala", resumo)
             self._enforce_safety_rules(ala_id)
             return
 
         LOGGER.debug("Evento da ala não tratado: %s", data)
 
     def _maybe_sync_cloud(self) -> None:
-        if not self.mqtt_client or not self.config.mqtt:
+        if not self._has_cloud_destinations():
             return
         if self._sync_cloud_interval <= 0:
             return
@@ -716,7 +949,8 @@ class Gateway:
             "state_snapshots": snapshot_rows,
             "summary": self._build_summary(),
         }
-        self._publish_mqtt("cloud_out", payload)
+        self._publish_all("cloud_out", payload)
+        self._send_cloud_rest(payload)
         latest_candidates = [latest_place, latest_ala, latest_air, latest_fan, latest_state]
         latest_candidates = [value for value in latest_candidates if value is not None]
         if latest_candidates:
@@ -986,7 +1220,7 @@ class Gateway:
         )
         self.conn.commit()
         resumo = self._build_summary().get(ala_id, {})
-        self._publish_mqtt("ala", {"ala": ala_id, **resumo})
+        self._publish_all("ala", {"ala": ala_id, **resumo})
 
     def _send_command_to_ala(self, payload: Dict[str, Any]) -> None:
         if not self.ala_serial_reader:
@@ -996,6 +1230,24 @@ class Gateway:
             self.ala_serial_reader.send_line(json.dumps(payload))
         except Exception as exc:  # pragma: no cover
             LOGGER.exception("Erro ao enviar comando para a ala: %s", exc)
+
+    def _on_cloud_mqtt_connect(self, client: "MQTTClientType", userdata: Any, flags: Dict[str, Any], rc: int) -> None:
+        if rc == 0:
+            LOGGER.info("Ligação MQTT cloud estabelecida")
+            if self._cloud_command_topic:
+                client.subscribe(self._cloud_command_topic)
+                LOGGER.info("Subscrito ao tópico cloud_in (cloud): %s", self._cloud_command_topic)
+        else:
+            LOGGER.error("Falha na ligação MQTT cloud (rc=%s)", rc)
+
+    def _on_cloud_mqtt_message(self, client: "MQTTClientType", userdata: Any, msg: "MQTTMessageType") -> None:
+        try:
+            payload = json.loads(msg.payload.decode("utf-8"))
+        except json.JSONDecodeError:
+            LOGGER.warning("Mensagem MQTT cloud inválida: %s", msg.payload)
+            return
+        LOGGER.info("Comando da cloud (remota) recebido (%s): %s", msg.topic, payload)
+        self._handle_cloud_command(payload)
 
     def _on_mqtt_connect(self, client: "MQTTClientType", userdata: Any, flags: Dict[str, Any], rc: int) -> None:
         if rc == 0:
