@@ -1,5 +1,6 @@
 # Caminho para o ficheiro SQLite (será criado automaticamente se não existir)
-sqlite_db_path: /home/pi/iot_gateway/iot.db
+# Usar caminho relativo ao projeto para evitar problemas de permissões
+sqlite_db_path: gateway_pi/data/iot.db
 
 # Capacidade máxima de cada ala
 alas:
@@ -26,13 +27,13 @@ alas:
 # NOTA: idealmente substitui /dev/ttyACM* por caminhos estáveis em /dev/serial/by-id/
 #       (corre: ls -l /dev/serial/by-id/)
 serial_devices:
-  - path: /dev/ttyACM1   # substituir por /dev/serial/by-id/... do nó do LUGAR (se possível)
-    tipo: lugar
-    id_lugar: A-01
-    baudrate: 115200
-  - path: /dev/ttyACM0   # substituir por /dev/serial/by-id/... do nó da ALA (se possível)
+  - path: /dev/ttyACM1   # parece ser o nó da ALA pelo tráfego observado
     tipo: ala
     id_ala: A
+    baudrate: 115200
+  - path: /dev/ttyACM0   # parece ser o nó do LUGAR pelo tráfego observado
+    tipo: lugar
+    id_lugar: A-01
     baudrate: 115200
 
 # Configuração de MQTT local
