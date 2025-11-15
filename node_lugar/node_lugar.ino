@@ -25,7 +25,8 @@ constexpr float MARGEM_OCUPADO_FATOR = 0.4f;      // 40% da referência
 constexpr float MARGEM_LIVRE_FATOR = 0.2f;        // 20% da referência
 constexpr float MARGEM_OCUPADO_MIN_CM = 3.0f;     // mínimo 3 cm
 constexpr float MARGEM_LIVRE_MIN_CM = 1.0f;       // mínimo 1 cm
-constexpr unsigned long STATUS_INTERVAL_MS = 5000;  // Enviar estado a cada 5 s
+// Heartbeat opcional: enviar estado mesmo sem mudanças. 0 = desativado.
+constexpr unsigned long HEARTBEAT_INTERVAL_MS = 0UL;
 constexpr unsigned long BETWEEN_SAMPLES_DELAY_MS = 40;
 
 enum class EstadoLugar { Livre, Ocupado };
@@ -167,7 +168,8 @@ void loop() {
     atualizarLeds(estadoAtual);
     enviarEstado(estadoAtual, distanciaMedida);
     ultimoEnvioMs = millis();
-  } else if (millis() - ultimoEnvioMs >= STATUS_INTERVAL_MS) {
+  } else if (HEARTBEAT_INTERVAL_MS > 0 &&
+             (millis() - ultimoEnvioMs) >= HEARTBEAT_INTERVAL_MS) {
     enviarEstado(estadoAtual, distanciaMedida);
     ultimoEnvioMs = millis();
   }
