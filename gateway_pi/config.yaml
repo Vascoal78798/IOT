@@ -27,11 +27,11 @@ alas:
 # NOTA: idealmente substitui /dev/ttyACM* por caminhos estáveis em /dev/serial/by-id/
 #       (corre: ls -l /dev/serial/by-id/)
 serial_devices:
-  - path: /dev/ttyACM1  
+  - path: /dev/ttyACM0  
     tipo: ala
     id_ala: A
     baudrate: 115200
-  - path: /dev/ttyACM0  
+  - path: /dev/ttyACM1  
     tipo: lugar
     id_lugar: A-01
     baudrate: 115200
