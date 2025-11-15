@@ -87,9 +87,9 @@ cloud:
     endpoint: a3vdn4su7s1y1w-ats.iot.eu-west-1.amazonaws.com
     port: 8883
     client_id: alaA-gateway
-    ca_cert: /home/pi/iot_gateway/certs/AmazonRootCA1.pem
-    certfile: /home/pi/iot_gateway/certs/device.pem.crt
-    keyfile: /home/pi/iot_gateway/certs/private.pem.key
+    ca_cert: /home/user/Desktop/pi/IOT/gateway_pi/certs/AmazonRootCA1.pem
+    certfile: /home/user/Desktop/pi/IOT/gateway_pi/certs/device.pem.crt
+    keyfile: /home/user/Desktop/pi/IOT/gateway_pi/certs/private.pem.key
     keepalive: 60
     tls_insecure: false
     topics:
