@@ -876,7 +876,6 @@ class Gateway:
             ala_state = self.state_tracker.ensure_ala(ala_id)
             ala_state.ocupacao_ala = int(total or ala_state.ocupacao_ala)
             LOGGER.info("[%s] Ala %s %s → total=%s", device.path, ala_id, evento, total)
-            self._check_lotacao_alert(ala_id, ala_state)
             self._enforce_safety_rules(ala_id)
             return
 
