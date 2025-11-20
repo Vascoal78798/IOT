@@ -111,11 +111,14 @@ def main() -> None:
 
 def _publish_forecast(config: GatewayConfig, payload: dict) -> None:
     """Envia a previsão diária para os tópicos MQTT configurados."""
+    if mqtt is None:
+        return
+
     topic_key = "daily_forecast"
     message = json.dumps(payload)
 
     # MQTT local
-    if config.mqtt and config.mqtt.enabled and mqtt is not None:
+    if config.mqtt and config.mqtt.enabled:
         topic = config.mqtt.topics.get(topic_key)
         if topic:
             client = mqtt.Client()
@@ -124,22 +127,20 @@ def _publish_forecast(config: GatewayConfig, payload: dict) -> None:
             try:
                 client.connect(config.mqtt.broker, config.mqtt.port)
                 client.publish(topic, message)
+            except Exception as exc:  # pragma: no cover
+                print(f"[WARN] Não foi possível publicar previsão no broker local: {exc}")
             finally:
                 try:
                     client.disconnect()
                 except Exception:  # pragma: no cover
                     pass
 
-
-if __name__ == "__main__":
-    main()
-
     # MQTT cloud (TLS)
-    if config.cloud and config.cloud.mqtt and config.cloud.mqtt.enabled and mqtt is not None:
+    if config.cloud and config.cloud.mqtt and config.cloud.mqtt.enabled:
         cfg = config.cloud.mqtt
         topic = cfg.topics.get(topic_key) if cfg.topics else None
         if topic and cfg.endpoint:
-            client_id = cfg.client_id or f"daily-forecaster"
+            client_id = cfg.client_id or "daily-forecaster"
             client = mqtt.Client(client_id=client_id)
             if cfg.username or cfg.password:
                 client.username_pw_set(cfg.username, cfg.password)
@@ -152,7 +153,7 @@ if __name__ == "__main__":
                     )
                     client.tls_insecure_set(cfg.tls_insecure)
                 except Exception as exc:  # pragma: no cover
-                    print(f"[WARN] Falha a configurar TLS para cloud MQTT: {exc}")
+                    print(f"[WARN] Falha ao configurar TLS para cloud MQTT: {exc}")
                     return
             try:
                 client.connect(cfg.endpoint, cfg.port, keepalive=cfg.keepalive)
@@ -166,4 +167,5 @@ if __name__ == "__main__":
                     pass
 
 
-
+if __name__ == "__main__":
+    main()
