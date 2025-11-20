@@ -165,10 +165,6 @@ def _publish_forecast(config: GatewayConfig, payload: dict) -> None:
             )
 
 
-if __name__ == "__main__":
-    main()
-
-
 def _connect_and_publish(
     client: Any,
     topic: str,
@@ -208,3 +204,7 @@ def _connect_and_publish(
             client.disconnect()
         except Exception:  # pragma: no cover
             pass
+
+
+if __name__ == "__main__":
+    main()
