@@ -47,8 +47,15 @@ def _ensure_random_seed(seed: Optional[int]) -> None:
 
 
 def purge_tables(conn: sqlite3.Connection, ala_id: str) -> None:
-    for table in TABLES:
-        conn.execute(f"DELETE FROM {table} WHERE ala_id = ?", (ala_id,))
+    """Apaga registos da ala especificada (ajustando coluna conforme tabela)."""
+    conn.execute("DELETE FROM state_snapshots WHERE ala_id = ?", (ala_id,))
+    conn.execute("DELETE FROM ala_events WHERE ala_id = ?", (ala_id,))
+    conn.execute("DELETE FROM air_samples WHERE ala_id = ?", (ala_id,))
+    conn.execute("DELETE FROM fan_events WHERE ala_id = ?", (ala_id,))
+    conn.execute("DELETE FROM tinyml_predictions WHERE ala_id = ?", (ala_id,))
+    conn.execute("DELETE FROM daily_forecasts WHERE ala_id = ?", (ala_id,))
+    # place_events usa lugar_id (ex: "A-01"), não ala_id
+    conn.execute("DELETE FROM place_events WHERE lugar_id LIKE ?", (f"{ala_id}-%",))
     conn.commit()
 
 
