@@ -167,6 +167,19 @@ class CloudConfig:
 
 
 @dataclass
+class TinyMLDailyConfig:
+    enabled: bool
+    ala_id: str
+    dataset_path: Path
+    model_path: Path
+    metrics_path: Path
+    forecast_path: Path
+    horizon_hours: int = 24
+    min_days: int = 7
+    min_hours_per_day: int = 12
+
+
+@dataclass
 class GatewayConfig:
     sqlite_db_path: Path
     serial_devices: list[SerialDeviceConfig]
@@ -175,6 +188,7 @@ class GatewayConfig:
     intervalos: Dict[str, int] = field(default_factory=dict)
     tinyml: Optional["TinyMLRuntimeConfigType"] = None
     cloud: Optional[CloudConfig] = None
+    tinyml_daily: Optional[TinyMLDailyConfig] = None
 
 
 def load_config(path: Path) -> GatewayConfig:
@@ -197,6 +211,11 @@ def load_config(path: Path) -> GatewayConfig:
     if raw_tinyml and TinyMLRuntimeConfig:
         tinyml_cfg = _parse_tinyml_config(raw_tinyml)
 
+    tinyml_daily_cfg = None
+    raw_tinyml_daily = raw.get("tinyml_daily")
+    if raw_tinyml_daily:
+        tinyml_daily_cfg = _parse_tinyml_daily_config(raw_tinyml_daily)
+
     cloud_cfg = None
     raw_cloud = raw.get("cloud")
     if raw_cloud:
@@ -210,6 +229,7 @@ def load_config(path: Path) -> GatewayConfig:
         intervalos=raw.get("intervalos", {}),
         tinyml=tinyml_cfg,
         cloud=cloud_cfg,
+        tinyml_daily=tinyml_daily_cfg,
     )
 
 
@@ -269,6 +289,20 @@ def _parse_tinyml_config(raw: Dict[str, Any]) -> "TinyMLRuntimeConfigType":
         safety_full_percent=int(raw.get("safety_full_percent", 100)),
         min_dataset_rows=int(raw.get("min_dataset_rows", 30)),
         recommendation=recommendation_cfg,
+    )
+
+
+def _parse_tinyml_daily_config(raw: Dict[str, Any]) -> TinyMLDailyConfig:
+    return TinyMLDailyConfig(
+        enabled=bool(raw.get("enabled", False)),
+        ala_id=str(raw.get("ala_id", "A")),
+        dataset_path=Path(raw.get("dataset_path", "data/daily_dataset.csv")),
+        model_path=Path(raw.get("model_path", "models/daily_forecast.tflite")),
+        metrics_path=Path(raw.get("metrics_path", "data/daily_metrics.json")),
+        forecast_path=Path(raw.get("forecast_path", "data/daily_forecast.json")),
+        horizon_hours=int(raw.get("horizon_hours", 24)),
+        min_days=int(raw.get("min_days", 7)),
+        min_hours_per_day=int(raw.get("min_hours_per_day", 12)),
     )
 
 
@@ -416,6 +450,15 @@ CREATE TABLE IF NOT EXISTS tinyml_predictions (
     features TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS daily_forecasts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ala_id TEXT NOT NULL,
+    forecast_date TEXT NOT NULL,
+    hour INTEGER NOT NULL,
+    percent REAL NOT NULL,
+    created_at TEXT NOT NULL
+);
 """
 
 
@@ -453,6 +496,7 @@ class AlaState:
     ack_pendente: Optional[int] = None
     ack_warned: bool = False
     ultimo_comando_time: float = 0.0
+    lotacao_alerta: bool = False
 
     def percent_ocupacao(self) -> float:
         if self.capacidade_maxima <= 0:
@@ -698,6 +742,10 @@ class Gateway:
         cloud_rest = bool(self.cloud_rest_config)
         return local or cloud_mqtt or cloud_rest
 
+    def _notify_alert(self, payload: Dict[str, Any]) -> None:
+        self._publish_all("alerta", payload)
+        self._send_cloud_rest(payload)
+
     def _send_cloud_rest(self, payload: Dict[str, Any]) -> None:
         if not self.cloud_rest_config or not requests:
             return
@@ -828,6 +876,7 @@ class Gateway:
             ala_state = self.state_tracker.ensure_ala(ala_id)
             ala_state.ocupacao_ala = int(total or ala_state.ocupacao_ala)
             LOGGER.info("[%s] Ala %s %s → total=%s", device.path, ala_id, evento, total)
+            self._check_lotacao_alert(ala_id, ala_state)
             self._enforce_safety_rules(ala_id)
             return
 
@@ -908,6 +957,7 @@ class Gateway:
             }
             LOGGER.info("[%s] Estado ala %s → %s", device.path, ala_id, resumo)
             self._publish_all("ala", resumo)
+            self._check_lotacao_alert(ala_id, ala_state)
             self._enforce_safety_rules(ala_id)
             return
 
@@ -991,6 +1041,36 @@ class Gateway:
 
         ala_state.safety_target_percent = percent
         self._apply_control_for_ala(ala_id, reason="safety")
+
+    def _check_lotacao_alert(self, ala_id: str, ala_state: AlaState) -> None:
+        if ala_state.capacidade_maxima <= 0:
+            return
+        cheio = ala_state.ocupacao_ala >= ala_state.capacidade_maxima
+        timestamp_iso = datetime.now(timezone.utc).isoformat()
+        if cheio and not ala_state.lotacao_alerta:
+            ala_state.lotacao_alerta = True
+            payload = {
+                "ala": ala_id,
+                "evento": "lotacao_maxima",
+                "status": "active",
+                "ocupacao": ala_state.ocupacao_ala,
+                "capacidade": ala_state.capacidade_maxima,
+                "timestamp": timestamp_iso,
+            }
+            LOGGER.warning("[Alerta] Ala %s atingiu capacidade máxima (%s/%s).", ala_id, ala_state.ocupacao_ala, ala_state.capacidade_maxima)
+            self._notify_alert(payload)
+        elif not cheio and ala_state.lotacao_alerta:
+            ala_state.lotacao_alerta = False
+            payload = {
+                "ala": ala_id,
+                "evento": "lotacao_maxima",
+                "status": "resolved",
+                "ocupacao": ala_state.ocupacao_ala,
+                "capacidade": ala_state.capacidade_maxima,
+                "timestamp": timestamp_iso,
+            }
+            LOGGER.info("[Alerta] Ala %s voltou a ficar abaixo da capacidade (%s/%s).", ala_id, ala_state.ocupacao_ala, ala_state.capacidade_maxima)
+            self._notify_alert(payload)
 
     def _compute_final_percent(self, ala_id: str) -> int:
         ala_state = self.state_tracker.ensure_ala(ala_id)

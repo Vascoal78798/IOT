@@ -147,13 +147,13 @@ Tarefas:
 - [x] Definir estratégia de retenção e limpeza de dados históricos.
 
 ### 3.2 TinyML / Machine Learning
-- [ ] Captar dataset inicial (mínimo 24 h) para treino.
-- [ ] Pré-processar dados no PC/Pi (normalização, features de tempo, fluxo acumulado).
-- [ ] Treinar modelo no Tiny Machine Learning Kit (TensorFlow Lite Micro) e salvar logs.
-- [ ] Avaliar modelo (RMSE/MAE) e iterar se necessário.
-- [ ] Converter para `.tflite` otimizado e versionar.
-- [ ] Automatizar processo de atualização: copiar novo modelo para o Pi e recarregar sem reboot.
-- [ ] Planear re-treino periódico (manual ou triggered pela cloud quando existir novo dataset).
+- [x] Captar dataset inicial (mínimo 24 h) para treino.
+- [x] Pré-processar dados no PC/Pi (normalização, features de tempo, fluxo acumulado).
+- [x] Treinar modelo no Tiny Machine Learning Kit (TensorFlow Lite Micro) e salvar logs.
+- [x] Avaliar modelo (RMSE/MAE) e iterar se necessário.
+- [x] Converter para `.tflite` otimizado e versionar.
+- [x] Automatizar processo de atualização: copiar novo modelo para o Pi e recarregar sem reboot.
+- [x] Planear re-treino periódico (manual ou triggered pela cloud quando existir novo dataset).
 
 ## 4. Dashboard e Visualização
 

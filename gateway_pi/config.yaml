@@ -48,6 +48,7 @@ mqtt:
     ala: alaA/ala
     cloud_out: pi/alaA/telemetry
     cloud_in: cloud/alaA/commands
+    daily_forecast: alaA/daily_forecast
 
 # Intervalos (em segundos)
 intervalos:
@@ -79,6 +80,19 @@ tinyml:
       - limite_percent: 70
         percent: 75
 
+
+tinyml_daily:
+  enabled: true
+  ala_id: A
+  dataset_path: /home/pi/iot_gateway/data/alaA_daily_dataset.csv
+  model_path: /home/pi/iot_gateway/models/alaA_daily_forecast.tflite
+  metrics_path: /home/pi/iot_gateway/data/alaA_daily_metrics.json
+  forecast_path: /home/pi/iot_gateway/data/alaA_daily_forecast.json
+  horizon_hours: 24
+  min_days: 7
+  min_hours_per_day: 12
+
+
 # Cloud (opcional) — MQTT cloud ativo
 cloud:
   provider: aws_iot_core
@@ -97,6 +111,8 @@ cloud:
       cloud_in: aws/alaA/commands
       lugar: aws/alaA/lugares
       ala: aws/alaA/estado
+      alerta: aws/alaA/alertas
+      daily_forecast: aws/alaA/daily_forecast
   retention:
     retention_days: 30
     purge_interval_hours: 12

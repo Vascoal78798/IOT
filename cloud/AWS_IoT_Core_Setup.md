@@ -60,6 +60,8 @@ Este documento descreve os passos necessários para reproduzir a integração da
      - `aws/alaA/commands` (comandos Cloud → Pi)
      - `aws/alaA/lugares` (estado detalhado dos lugares)
      - `aws/alaA/estado` (estado agregado da ala)
+      - `aws/alaA/alertas` (alertas: ala cheia, etc.)
+     - `aws/alaA/daily_forecast` (previsão diária em JSON)
    - Não é necessário criar formalmente os tópicos; basta garantir que as policies permitem o acesso.
 
 5. **Testar ligação**

@@ -167,6 +167,40 @@ python gateway_pi/tinyml_pipeline.py train --config gateway_pi/config.yaml --epo
 ```
 Isto cria/actualiza o dataset e o `.tflite`. Se o Pi não aguentar, treina num PC e copia o ficheiro `.tflite` para o caminho indicado no YAML (via `scp`, pendrive, etc.).
 
+### 7.1. Sem dados reais? Gera dados sintéticos
+
+Se ainda não tens um histórico significativo (ex.: demo com um único sensor), usa o gerador incluído para semear valores plausíveis:
+
+```bash
+source /home/pi/IOT/.venv/bin/activate
+python gateway_pi/generate_demo_data.py --config gateway_pi/config.yaml --minutes 360 --clear
+```
+
+- `--minutes` controla a duração simulada (360 ≈ 6 h).  
+- `--clear` apaga previamente os registos dessa ala antes de gerar novos.  
+- Podes indicar `--ala B` ou `--seed 123` para variar os dados.
+
+Depois volta a correr `tinyml_pipeline.py export/train` para usar estas amostras no treino.
+
+### 7.2. Previsão diária (por hora) – opcional
+
+Para prever o perfil de ocupação do dia seguinte (24 valores por hora):
+
+```bash
+source /home/pi/IOT/.venv/bin/activate
+# 1) agrega dados (baseado em state_snapshots)
+python gateway_pi/tinyml_daily_pipeline.py aggregate --config gateway_pi/config.yaml
+# 2) treina/actualiza o modelo diário
+python gateway_pi/tinyml_daily_pipeline.py train --config gateway_pi/config.yaml --epochs 200
+# 3) gera previsão (grava JSON + SQL)
+python gateway_pi/tinyml_daily_pipeline.py forecast --config gateway_pi/config.yaml
+```
+
+- O CSV fica em `tinyml_daily.dataset_path`.  
+- O modelo `.tflite` é guardado em `tinyml_daily.model_path`.  
+- A previsão é escrita em JSON (`forecast_path`) e na tabela SQLite `daily_forecasts` (um registo por hora).  
+- Idealmente agenda estes passos (ex.: cron nocturno) após colectares dados reais.
+
 ---
 
 ## 8. Execução do gateway
@@ -216,7 +250,9 @@ Assim, o gateway arranca automaticamente ao ligar o Pi.
 5. **Mismatch**: altera manualmente `soma_lugares` (comando cloud ou firmware) para diferir de `ocupacao_ala` e aguarda `mismatch_duration` segundos → deve activar `alerta_sensor` e ventoinha 100 %.
 6. **ACK ventoinha**: observa se após cada comando `percent` o nó responde com `{"evento":"ventoinha","percent":...}`; se desligares o Arduino, surge log “Sem ACK...” após o timeout.
 7. **Overrides cloud**: (se quiseres) publica via MQTT `{"ala":"A","percent":80}` no tópico `cloud_in`. A ventoinha muda, mas depois do TTL volta a ser controlada pelas regras.
-8. **TinyML**: quando tiveres modelo, verifica log `[TinyML] Ala ...` e confirma que `tinyml_predictions` regista as previsões.
+8. **Alerta de lotação**: força `ocupacao_ala` = capacidade (simula entradas) → deve surgir log `[Alerta] Ala ... atingiu capacidade máxima` e mensagem em `alerta`.
+9. **TinyML**: quando tiveres modelo, verifica log `[TinyML] Ala ...` e confirma que `tinyml_predictions` regista as previsões.
+10. **TinyML diário**: depois de correres a pipeline `tinyml_daily_pipeline.py forecast`, verifica o ficheiro JSON e a tabela `daily_forecasts`, e assegura-te que o tópico `daily_forecast` recebe a mensagem.
 
 ---
 
