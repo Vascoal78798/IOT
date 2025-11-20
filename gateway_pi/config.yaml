@@ -48,7 +48,8 @@ mqtt:
     ala: alaA/ala
     cloud_out: pi/alaA/telemetry
     cloud_in: cloud/alaA/commands
-    daily_forecast: alaA/daily_forecast
+    alerta: aws/alaA/alertas
+    daily_forecast: aws/alaA/daily_forecast
 
 # Intervalos (em segundos)
 intervalos:
