@@ -126,11 +126,13 @@ def _publish_forecast(config: GatewayConfig, payload: dict) -> None:
                 client.username_pw_set(config.mqtt.username, config.mqtt.password)
             try:
                 client.connect(config.mqtt.broker, config.mqtt.port)
+                client.loop_start()
                 client.publish(topic, message)
             except Exception as exc:  # pragma: no cover
                 print(f"[WARN] Não foi possível publicar previsão no broker local: {exc}")
             finally:
                 try:
+                    client.loop_stop()
                     client.disconnect()
                 except Exception:  # pragma: no cover
                     pass
@@ -141,7 +143,7 @@ def _publish_forecast(config: GatewayConfig, payload: dict) -> None:
         topic = cfg.topics.get(topic_key) if cfg.topics else None
         if topic and cfg.endpoint:
             client_id = cfg.client_id or "daily-forecaster"
-            client = mqtt.Client(client_id=client_id)
+            client = mqtt.Client(client_id=f"{client_id}-daily")
             if cfg.username or cfg.password:
                 client.username_pw_set(cfg.username, cfg.password)
             if cfg.ca_cert or cfg.certfile or cfg.keyfile:
@@ -157,11 +159,13 @@ def _publish_forecast(config: GatewayConfig, payload: dict) -> None:
                     return
             try:
                 client.connect(cfg.endpoint, cfg.port, keepalive=cfg.keepalive)
+                client.loop_start()
                 client.publish(topic, message)
             except Exception as exc:  # pragma: no cover
                 print(f"[WARN] Não foi possível publicar previsão na cloud: {exc}")
             finally:
                 try:
+                    client.loop_stop()
                     client.disconnect()
                 except Exception:  # pragma: no cover
                     pass

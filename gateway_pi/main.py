@@ -876,6 +876,7 @@ class Gateway:
             ala_state = self.state_tracker.ensure_ala(ala_id)
             ala_state.ocupacao_ala = int(total or ala_state.ocupacao_ala)
             LOGGER.info("[%s] Ala %s %s → total=%s", device.path, ala_id, evento, total)
+            self._check_lotacao_alert(ala_id, ala_state)
             self._enforce_safety_rules(ala_id)
             return
 
@@ -922,7 +923,6 @@ class Gateway:
         if evento == "estado":
             ala_state = self.state_tracker.ensure_ala(ala_id)
             ala_state.ocupacao_ala = int(data.get("ocupacao_ala", ala_state.ocupacao_ala))
-            ala_state.soma_lugares = int(data.get("soma_lugares", ala_state.soma_lugares))
             ala_state.qualidade_ar_bruto = float(data.get("qualidade_ar_bruto", ala_state.qualidade_ar_bruto))
             ala_state.qualidade_ar_tensao = float(data.get("qualidade_ar_tensao", ala_state.qualidade_ar_tensao))
             ala_state.ventoinha_percent = int(data.get("ventoinha_percent", ala_state.ventoinha_percent))
