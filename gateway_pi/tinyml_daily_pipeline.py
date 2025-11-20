@@ -127,7 +127,8 @@ def _publish_forecast(config: GatewayConfig, payload: dict) -> None:
             try:
                 client.connect(config.mqtt.broker, config.mqtt.port)
                 client.loop_start()
-                client.publish(topic, message)
+                info = client.publish(topic, message)
+                info.wait_for_publish()
             except Exception as exc:  # pragma: no cover
                 print(f"[WARN] Não foi possível publicar previsão no broker local: {exc}")
             finally:
@@ -160,7 +161,8 @@ def _publish_forecast(config: GatewayConfig, payload: dict) -> None:
             try:
                 client.connect(cfg.endpoint, cfg.port, keepalive=cfg.keepalive)
                 client.loop_start()
-                client.publish(topic, message)
+                info = client.publish(topic, message)
+                info.wait_for_publish()
             except Exception as exc:  # pragma: no cover
                 print(f"[WARN] Não foi possível publicar previsão na cloud: {exc}")
             finally:
