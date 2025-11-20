@@ -6,8 +6,10 @@ import argparse
 import json
 import logging
 import sqlite3
+import threading
+import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from main import GatewayConfig, init_sqlite, load_config
 from tinyml_daily import DailyDatasetBuilder, DailyForecaster, DailyTrainer
@@ -18,6 +20,7 @@ except ImportError:  # pragma: no cover
     mqtt = None  # type: ignore
 
 LOGGER = logging.getLogger("iot.gateway.tinyml.daily.cli")
+CONNECT_TIMEOUT = 5.0
 
 
 def _require_daily_cfg(config: GatewayConfig) -> None:
@@ -124,19 +127,13 @@ def _publish_forecast(config: GatewayConfig, payload: dict) -> None:
             client = mqtt.Client()
             if config.mqtt.username or config.mqtt.password:
                 client.username_pw_set(config.mqtt.username, config.mqtt.password)
-            try:
-                client.connect(config.mqtt.broker, config.mqtt.port)
-                client.loop_start()
-                info = client.publish(topic, message)
-                info.wait_for_publish()
-            except Exception as exc:  # pragma: no cover
-                print(f"[WARN] Não foi possível publicar previsão no broker local: {exc}")
-            finally:
-                try:
-                    client.loop_stop()
-                    client.disconnect()
-                except Exception:  # pragma: no cover
-                    pass
+            _connect_and_publish(
+                client,
+                topic,
+                message,
+                host=config.mqtt.broker,
+                port=config.mqtt.port,
+            )
 
     # MQTT cloud (TLS)
     if config.cloud and config.cloud.mqtt and config.cloud.mqtt.enabled:
@@ -158,20 +155,56 @@ def _publish_forecast(config: GatewayConfig, payload: dict) -> None:
                 except Exception as exc:  # pragma: no cover
                     print(f"[WARN] Falha ao configurar TLS para cloud MQTT: {exc}")
                     return
-            try:
-                client.connect(cfg.endpoint, cfg.port, keepalive=cfg.keepalive)
-                client.loop_start()
-                info = client.publish(topic, message)
-                info.wait_for_publish()
-            except Exception as exc:  # pragma: no cover
-                print(f"[WARN] Não foi possível publicar previsão na cloud: {exc}")
-            finally:
-                try:
-                    client.loop_stop()
-                    client.disconnect()
-                except Exception:  # pragma: no cover
-                    pass
+            _connect_and_publish(
+                client,
+                topic,
+                message,
+                host=cfg.endpoint,
+                port=cfg.port,
+                keepalive=cfg.keepalive,
+            )
 
 
 if __name__ == "__main__":
     main()
+
+
+def _connect_and_publish(
+    client: Any,
+    topic: str,
+    message: str,
+    *,
+    host: str,
+    port: int,
+    keepalive: int | None = None,
+) -> None:
+    """Estabelece ligação, publica e garante que o payload sai antes de desligar."""
+    if keepalive is None:
+        keepalive = 60
+
+    connected = threading.Event()
+    client.on_connect = lambda *_args: connected.set()
+
+    try:
+        client.connect(host, port, keepalive=keepalive)
+    except Exception as exc:  # pragma: no cover
+        print(f"[WARN] Não foi possível ligar ao broker {host}:{port}: {exc}")
+        return
+
+    client.loop_start()
+    try:
+        if not connected.wait(CONNECT_TIMEOUT):
+            print(f"[WARN] MQTT {host}:{port} não respondeu ao CONNECT dentro de {CONNECT_TIMEOUT}s.")
+            return
+        info = client.publish(topic, message)
+        info.wait_for_publish()
+        # Dá tempo ao loop para enviar (QoS0 não tem ACK)
+        time.sleep(0.2)
+    except Exception as exc:  # pragma: no cover
+        print(f"[WARN] Erro ao publicar em {topic}: {exc}")
+    finally:
+        client.loop_stop()
+        try:
+            client.disconnect()
+        except Exception:  # pragma: no cover
+            pass
