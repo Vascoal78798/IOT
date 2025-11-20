@@ -259,9 +259,15 @@ class DailyForecaster:
         latest_profile = profiles[-1]
         feature_vector = np.array([self.builder._build_features(latest_profile)], dtype=np.float32)
 
-        from tensorflow.lite import Interpreter  # type: ignore
+        try:
+            from tflite_runtime.interpreter import Interpreter as TFLInterpreter  # type: ignore
+        except ImportError:
+            try:
+                from tensorflow.lite.python.interpreter import Interpreter as TFLInterpreter  # type: ignore
+            except ImportError:  # pragma: no cover
+                from tensorflow.lite import Interpreter as TFLInterpreter  # type: ignore
 
-        interpreter = Interpreter(model_path=str(self.config.model_path))
+        interpreter = TFLInterpreter(model_path=str(self.config.model_path))
         interpreter.allocate_tensors()
         input_details = interpreter.get_input_details()
         output_details = interpreter.get_output_details()
