@@ -48,7 +48,7 @@ mqtt:
     ala: alaA/ala
     cloud_out: pi/alaA/telemetry
     cloud_in: cloud/alaA/commands
-    alerta: aws/alaA/alertas
+   
     daily_forecast: aws/alaA/daily_forecast
 
 # Intervalos (em segundos)
@@ -57,9 +57,9 @@ intervalos:
   resumo_stdout: 10
   sync_batch_limit: 200
 
-# TinyML local (opcional) — desativado por omissão até teres os ficheiros
+
 tinyml:
-  enabled: false
+  enabled: true
   ala_id: A
   dataset_path: /home/user/Desktop/pi/IOT/gateway_pi/data/alaA_dataset.csv
   model_path: /home/user/Desktop/pi/IOT/gateway_pi/models/alaA_forecast.tflite
