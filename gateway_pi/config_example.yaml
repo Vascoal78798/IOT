@@ -46,7 +46,7 @@ mqtt:
     cloud_out: pi/alaA/telemetry
     cloud_in: cloud/alaA/commands
     alerta: alaA/alertas
-      daily_forecast: alaA/daily_forecast
+    daily_forecast: alaA/daily_forecast
 
 # Intervalos (em segundos)
 intervalos:
@@ -58,9 +58,9 @@ intervalos:
 tinyml:
   enabled: true
   ala_id: A
-  dataset_path: /home/pi/iot_gateway/data/alaA_dataset.csv
-  model_path: /home/pi/iot_gateway/models/alaA_forecast.tflite
-  metrics_path: /home/pi/iot_gateway/data/alaA_metrics.json
+  dataset_path: gateway_pi/data/alaA_dataset.csv
+  model_path: gateway_pi/models/alaA_forecast.tflite
+  metrics_path: gateway_pi/data/alaA_metrics.json
   horizon_minutes: 5
   flux_window_seconds: 180
   inference_interval_seconds: 60
@@ -81,10 +81,10 @@ tinyml:
 tinyml_daily:
   enabled: true
   ala_id: A
-  dataset_path: /home/pi/iot_gateway/data/alaA_daily_dataset.csv
-  model_path: /home/pi/iot_gateway/models/alaA_daily_forecast.tflite
-  metrics_path: /home/pi/iot_gateway/data/alaA_daily_metrics.json
-  forecast_path: /home/pi/iot_gateway/data/alaA_daily_forecast.json
+  dataset_path: gateway_pi/data/alaA_daily_dataset.csv
+  model_path: gateway_pi/models/alaA_daily_forecast.tflite
+  metrics_path: gateway_pi/data/alaA_daily_metrics.json
+  forecast_path: gateway_pi/data/alaA_daily_forecast.json
   horizon_hours: 24
   min_days: 7
   min_hours_per_day: 12
@@ -96,9 +96,9 @@ cloud:
     endpoint: a3vdn4su7s1y1w-ats.iot.eu-west-1.amazonaws.com
     port: 8883
     client_id: alaA-gateway
-    ca_cert: /home/pi/iot_gateway/certs/AmazonRootCA1.pem
-    certfile: /home/pi/iot_gateway/certs/device.pem.crt
-    keyfile: /home/pi/iot_gateway/certs/private.pem.key
+    ca_cert: gateway_pi/certs/AmazonRootCA1.pem
+    certfile: gateway_pi/certs/device.pem.crt
+    keyfile: gateway_pi/certs/private.pem.key
     keepalive: 60
     tls_insecure: false
     topics:

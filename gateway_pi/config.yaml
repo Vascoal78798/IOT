@@ -60,9 +60,9 @@ intervalos:
 tinyml:
   enabled: false
   ala_id: A
-  dataset_path: /home/pi/iot_gateway/data/alaA_dataset.csv
-  model_path: /home/pi/iot_gateway/models/alaA_forecast.tflite
-  metrics_path: /home/pi/iot_gateway/data/alaA_metrics.json
+  dataset_path: /home/user/Desktop/pi/IOT/gateway_pi/data/alaA_dataset.csv
+  model_path: /home/user/Desktop/pi/IOT/gateway_pi/models/alaA_forecast.tflite
+  metrics_path: /home/user/Desktop/pi/IOT/gateway_pi/data/alaA_metrics.json
   horizon_minutes: 5
   flux_window_seconds: 180
   inference_interval_seconds: 60
@@ -84,10 +84,10 @@ tinyml:
 tinyml_daily:
   enabled: true
   ala_id: A
-  dataset_path: /home/pi/iot_gateway/data/alaA_daily_dataset.csv
-  model_path: /home/pi/iot_gateway/models/alaA_daily_forecast.tflite
-  metrics_path: /home/pi/iot_gateway/data/alaA_daily_metrics.json
-  forecast_path: /home/pi/iot_gateway/data/alaA_daily_forecast.json
+  dataset_path: /home/user/Desktop/pi/IOT/gateway_pi/data/alaA_daily_dataset.csv
+  model_path: /home/user/Desktop/pi/IOT/gateway_pi/models/alaA_daily_forecast.tflite
+  metrics_path: /home/user/Desktop/pi/IOT/gateway_pi/data/alaA_daily_metrics.json
+  forecast_path: /home/user/Desktop/pi/IOT/gateway_pi/data/alaA_daily_forecast.json
   horizon_hours: 24
   min_days: 7
   min_hours_per_day: 12
