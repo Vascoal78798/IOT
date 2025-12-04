@@ -591,6 +591,8 @@ class Gateway:
         self.config = config
         self.conn = init_sqlite(config.sqlite_db_path)
         self.state_tracker = StateTracker(config)
+        # Última previsão TinyML por ala (para incluir no JSON de estado)
+        self._last_tinyml: Dict[str, Dict[str, Any]] = {}
         self.place_states: Dict[str, str] = {}
         self.serial_queue: "queue.Queue[SerialMessage]" = queue.Queue()
         self.serial_threads = [SerialReader(device, self.serial_queue) for device in config.serial_devices]
@@ -959,6 +961,8 @@ class Gateway:
                 # Estrutura aninhada para qualidade do ar, como pediste
                 "qualidade_ar": {"tensao": ala_state.qualidade_ar_tensao},
                 "alerta_sensor": ala_state.alerta_sensor,
+                # Última previsão TinyML (se existir)
+                "tinyml": self._last_tinyml.get(ala_id),
             }
             LOGGER.info("[%s] Estado ala %s → %s", device.path, ala_id, resumo)
             self._publish_all("ala", resumo)
@@ -1138,6 +1142,17 @@ class Gateway:
         features_to_store = dict(prediction.features)
         features_to_store["_tinyml_recommended"] = prediction.recommended_percent
         features_to_store["_final_percent"] = final_percent
+        # Guardar também em memória um resumo para enviar no JSON de estado
+        try:
+            ts_iso = datetime.fromtimestamp(prediction.timestamp_ms / 1000.0, tz=timezone.utc).isoformat()
+        except Exception:
+            ts_iso = created_at
+        self._last_tinyml[ala_id] = {
+            "timestamp": ts_iso,
+            "predicted_percent": prediction.predicted_percent,
+            "recommended_percent": prediction.recommended_percent,
+            "final_percent": final_percent,
+        }
         try:
             self.conn.execute(
                 "INSERT INTO tinyml_predictions (ala_id, timestamp_ms, predicted_percent, recommended_percent,"
