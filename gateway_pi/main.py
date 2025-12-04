@@ -948,10 +948,16 @@ class Gateway:
 
             resumo = {
                 "ala": ala_id,
+                # timestamp ISO da leitura atual (usado pela Web/App e cloud)
+                "timestamp": created_at,
                 "ocupacao": ala_state.ocupacao_ala,
                 "soma_lugares": ala_state.soma_lugares,
                 "capacidade": ala_state.capacidade_maxima,
                 "percent_ocupacao": ala_state.percent_ocupacao(),
+                "ventoinha_percent": ala_state.ventoinha_percent,
+                "qualidade_ar_tensao": ala_state.qualidade_ar_tensao,
+                # Estrutura aninhada para qualidade do ar, como pediste
+                "qualidade_ar": {"tensao": ala_state.qualidade_ar_tensao},
                 "alerta_sensor": ala_state.alerta_sensor,
             }
             LOGGER.info("[%s] Estado ala %s → %s", device.path, ala_id, resumo)
